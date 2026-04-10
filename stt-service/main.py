@@ -1,11 +1,14 @@
-import os
-import uuid
 import asyncio
-from fastapi import FastAPI, UploadFile, File
+import os
 import shutil
+import uuid
+
+from fastapi import FastAPI, File, HTTPException, UploadFile
+
 from whisper_service import transcribe
 
 app = FastAPI()
+
 
 @app.post("/transcribe")
 async def transcribe_audio(file: UploadFile = File(...)):
@@ -16,9 +19,11 @@ async def transcribe_audio(file: UploadFile = File(...)):
         shutil.copyfileobj(file.file, buffer)
 
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(None, transcribe, path)
+        return result
+    except Exception as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
     finally:
-        os.remove(path)
-
-    return result
+        if os.path.exists(path):
+            os.remove(path)
