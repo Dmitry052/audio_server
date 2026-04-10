@@ -55,10 +55,14 @@ find /usr/local -name 'libcublas.so*' 2>/dev/null
 python3 -c "import ctypes; ctypes.CDLL('libcublas.so.12'); print('libcublas.so.12: OK')"
 ```
 
-If the library exists but is still not found by Python:
+If the library exists but is still not found by Python, and `find` shows it under Ollama's CUDA runtime path:
 
 ```bash
-export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=/usr/local/lib/ollama/cuda_v12:$LD_LIBRARY_PATH
+python3 -c 'import ctypes; ctypes.CDLL("libcublas.so.12"); print("libcublas.so.12: OK")'
+
+# Make it permanent
+echo '/usr/local/lib/ollama/cuda_v12' | sudo tee /etc/ld.so.conf.d/ollama-cuda-v12.conf
 sudo ldconfig
 ldconfig -p | grep libcublas.so.12
 ```

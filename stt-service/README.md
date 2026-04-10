@@ -44,11 +44,15 @@ python3 -c "import ctypes; ctypes.CDLL('libcublas.so.12'); print('libcublas.so.1
 ## If `libcublas.so.12` is installed but not found
 
 ```bash
-export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=/usr/local/lib/ollama/cuda_v12:$LD_LIBRARY_PATH
+python3 -c 'import ctypes; ctypes.CDLL("libcublas.so.12"); print("libcublas.so.12: OK")'
+
+# To make the path permanent for the dynamic linker
+echo '/usr/local/lib/ollama/cuda_v12' | sudo tee /etc/ld.so.conf.d/ollama-cuda-v12.conf
 sudo ldconfig
 
 ldconfig -p | grep libcublas.so.12
-python3 -c "import ctypes; ctypes.CDLL('libcublas.so.12'); print('libcublas.so.12: OK')"
+python3 -c 'import ctypes; ctypes.CDLL("libcublas.so.12"); print("libcublas.so.12: OK")'
 ```
 
 ## Run
