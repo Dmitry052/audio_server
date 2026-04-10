@@ -63,22 +63,39 @@ wss.on("connection", (ws) => {
         return;
       }
 
-      const llm = await axios.post(OLLAMA_URL, {
-        model: OLLAMA_MODEL,
-        prompt: `Summarize this call: ${text}`,
-        stream: false,
-      });
+      let summary = "";
+
+      try {
+        const llm = await axios.post(OLLAMA_URL, {
+          model: OLLAMA_MODEL,
+          prompt: `Summarize this call: ${text}`,
+          stream: false,
+        });
+
+        summary = String(llm.data?.response || "").trim();
+      } catch (error) {
+        console.error("ollama error:", extractErrorDetails(error));
+      }
+
+      if (ws.readyState === WebSocket.OPEN) {
+        const payload = JSON.stringify({
+          text,
+          summary,
+        });
+
+        ws.send(payload);
+        console.log(`📤 Sent result to client: ${payload}`);
+      }
+    } catch (error) {
+      console.error("pipeline error:", extractErrorDetails(error));
 
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(
           JSON.stringify({
-            text,
-            summary: llm.data.response,
+            error: "audio pipeline failed",
           }),
         );
       }
-    } catch (error) {
-      console.error("pipeline error:", extractErrorDetails(error));
     } finally {
       isProcessing = false;
 
