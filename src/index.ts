@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { writeFile } from "node:fs/promises";
 import WebSocket, { WebSocketServer } from "ws";
 import axios from "axios";
 
@@ -14,6 +15,9 @@ const BYTES_PER_SAMPLE = BITS_PER_SAMPLE / 8;
 const MIN_AUDIO_SECONDS = 5;
 const MIN_PCM_BYTES = SAMPLE_RATE * CHANNELS * BYTES_PER_SAMPLE * MIN_AUDIO_SECONDS;
 const MIN_SUMMARY_WORDS = 3;
+const MIN_RMS = 0.003;
+const DEBUG_SAVE_WAV = process.env.DEBUG_SAVE_WAV === "1";
+const DEBUG_WAV_PATH = process.env.DEBUG_WAV_PATH || "/tmp/audio_server_debug.wav";
 const IGNORED_TRANSCRIPTS = new Set([
   "you",
   "thank you",
@@ -46,11 +50,30 @@ wss.on("connection", (ws) => {
     pcmBytes = 0;
 
     try {
+      const signal = analyzePcmSignal(pcmBuffer);
+
+      console.log(
+        `🔊 Audio stats: reason=${reason}, rms=${signal.rms.toFixed(6)}, peak=${signal.peak.toFixed(6)}, pcmBytes=${pcmBuffer.length}`,
+      );
+
+      if (signal.rms < MIN_RMS) {
+        console.log(
+          `🤫 Skipping STT because signal is too quiet (rms=${signal.rms.toFixed(6)} < ${MIN_RMS})`,
+        );
+        return;
+      }
+
       const wavBuffer = pcmToWav(pcmBuffer, SAMPLE_RATE, CHANNELS, BITS_PER_SAMPLE);
+
+      if (DEBUG_SAVE_WAV) {
+        await writeFile(DEBUG_WAV_PATH, wavBuffer);
+        console.log(`💾 Saved debug WAV: ${DEBUG_WAV_PATH}`);
+      }
+
       const filename = `audio-${randomUUID()}.wav`;
       const form = new FormData();
-
       const wavBytes = new Uint8Array(wavBuffer);
+
       form.append("file", new Blob([wavBytes], { type: "audio/wav" }), filename);
 
       console.log(
@@ -96,11 +119,7 @@ wss.on("connection", (ws) => {
       }
 
       if (ws.readyState === WebSocket.OPEN) {
-        const payload = JSON.stringify({
-          text,
-          summary,
-        });
-
+        const payload = JSON.stringify({ text, summary });
         ws.send(payload);
         console.log(`📤 Sent result to client: ${payload}`);
       }
@@ -108,11 +127,7 @@ wss.on("connection", (ws) => {
       console.error("pipeline error:", extractErrorDetails(error));
 
       if (ws.readyState === WebSocket.OPEN) {
-        ws.send(
-          JSON.stringify({
-            error: "audio pipeline failed",
-          }),
-        );
+        ws.send(JSON.stringify({ error: "audio pipeline failed" }));
       }
     } finally {
       isProcessing = false;
@@ -177,6 +192,24 @@ function shouldIgnoreTranscript(text: string) {
   }
 
   return normalized.split(/\s+/).length === 1 && normalized.length <= 4;
+}
+
+function analyzePcmSignal(pcmBuffer: Buffer) {
+  let sumSquares = 0;
+  let peak = 0;
+  const sampleCount = Math.floor(pcmBuffer.length / 2);
+
+  for (let i = 0; i < sampleCount; i++) {
+    const sample = pcmBuffer.readInt16LE(i * 2) / 32768;
+    const absSample = Math.abs(sample);
+
+    sumSquares += sample * sample;
+    peak = Math.max(peak, absSample);
+  }
+
+  const rms = sampleCount > 0 ? Math.sqrt(sumSquares / sampleCount) : 0;
+
+  return { rms, peak };
 }
 
 function pcmToWav(
