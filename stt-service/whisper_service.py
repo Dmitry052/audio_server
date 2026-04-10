@@ -67,11 +67,22 @@ def get_model() -> WhisperModel:
         )
 
 
+def run_transcribe(active_model: WhisperModel, audio_path: str):
+    return active_model.transcribe(
+        audio_path,
+        beam_size=5,
+        condition_on_previous_text=False,
+        vad_filter=True,
+        vad_parameters={"min_silence_duration_ms": 500},
+        temperature=0.0,
+    )
+
+
 def transcribe(audio_path: str):
     active_model = get_model()
 
     try:
-        segments, info = active_model.transcribe(audio_path)
+        segments, info = run_transcribe(active_model, audio_path)
     except RuntimeError as error:
         if model_device != PRIMARY_DEVICE or not is_cuda_runtime_error(error):
             raise
@@ -85,7 +96,7 @@ def transcribe(audio_path: str):
             FALLBACK_DEVICE,
             FALLBACK_COMPUTE_TYPE,
         )
-        segments, info = active_model.transcribe(audio_path)
+        segments, info = run_transcribe(active_model, audio_path)
 
     text = " ".join(seg.text.strip() for seg in segments).strip()
 

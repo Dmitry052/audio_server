@@ -11,8 +11,17 @@ const SAMPLE_RATE = 16000;
 const CHANNELS = 1;
 const BITS_PER_SAMPLE = 16;
 const BYTES_PER_SAMPLE = BITS_PER_SAMPLE / 8;
-const MIN_AUDIO_SECONDS = 3;
+const MIN_AUDIO_SECONDS = 5;
 const MIN_PCM_BYTES = SAMPLE_RATE * CHANNELS * BYTES_PER_SAMPLE * MIN_AUDIO_SECONDS;
+const MIN_SUMMARY_WORDS = 3;
+const IGNORED_TRANSCRIPTS = new Set([
+  "you",
+  "thank you",
+  "thanks",
+  "bye",
+  "bye-bye",
+  "goodbye",
+]);
 
 const wss = new WebSocketServer({ port: WS_PORT, host: WS_HOST });
 
@@ -63,18 +72,27 @@ wss.on("connection", (ws) => {
         return;
       }
 
+      if (shouldIgnoreTranscript(text)) {
+        console.log(`🧹 Ignoring low-signal transcript: ${text}`);
+        return;
+      }
+
       let summary = "";
 
-      try {
-        const llm = await axios.post(OLLAMA_URL, {
-          model: OLLAMA_MODEL,
-          prompt: `Summarize this call: ${text}`,
-          stream: false,
-        });
+      if (hasEnoughContextForSummary(text)) {
+        try {
+          const llm = await axios.post(OLLAMA_URL, {
+            model: OLLAMA_MODEL,
+            prompt: `Summarize this call: ${text}`,
+            stream: false,
+          });
 
-        summary = String(llm.data?.response || "").trim();
-      } catch (error) {
-        console.error("ollama error:", extractErrorDetails(error));
+          summary = String(llm.data?.response || "").trim();
+        } catch (error) {
+          console.error("ollama error:", extractErrorDetails(error));
+        }
+      } else {
+        console.log(`⏭️ Skipping summary for short transcript: ${text}`);
       }
 
       if (ws.readyState === WebSocket.OPEN) {
@@ -142,6 +160,24 @@ wss.on("connection", (ws) => {
     console.error("ws error:", extractErrorDetails(error));
   });
 });
+
+function hasEnoughContextForSummary(text: string) {
+  return text.split(/\s+/).filter(Boolean).length >= MIN_SUMMARY_WORDS;
+}
+
+function shouldIgnoreTranscript(text: string) {
+  const normalized = text.toLowerCase().replace(/[.!?,;:]+$/g, "").trim();
+
+  if (!normalized) {
+    return true;
+  }
+
+  if (IGNORED_TRANSCRIPTS.has(normalized)) {
+    return true;
+  }
+
+  return normalized.split(/\s+/).length === 1 && normalized.length <= 4;
+}
 
 function pcmToWav(
   pcmBuffer: Buffer,
