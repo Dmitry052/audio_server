@@ -1,6 +1,6 @@
 # Audio Server
 
-> 🎙️ Real-time speech pipeline: client audio -> WebSocket ingestion -> speech-to-text -> LLM summary.
+> 🎙️ Real-time speech pipeline: client audio → WebSocket streaming or HTTP file upload → speech-to-text → LLM summary.
 
 ![Node.js](https://img.shields.io/badge/Node.js-18%2B-2F7D32?style=flat-square&logo=nodedotjs&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-WS%20Server-3178C6?style=flat-square&logo=typescript&logoColor=white)
@@ -8,33 +8,36 @@
 ![faster-whisper](https://img.shields.io/badge/faster--whisper-STT-7A3FF2?style=flat-square)
 ![Ollama](https://img.shields.io/badge/Ollama-LLM%20Summary-111111?style=flat-square)
 ![WebSocket](https://img.shields.io/badge/WebSocket-Streaming-F97316?style=flat-square)
+![HTTP](https://img.shields.io/badge/HTTP-REST%20Upload-22C55E?style=flat-square)
 
 ## Highlights
 
 This repository combines two small services into one voice-processing pipeline:
 
 - 🎧 `stt-service/` handles speech-to-text through `faster-whisper`
-- 🌐 `src/` accepts PCM audio over WebSocket, buffers it, sends WAV to STT, then asks Ollama for a summary
+- 🌐 `src/` accepts PCM audio over WebSocket **or** a full WAV file over HTTP, buffers/encodes it, sends to STT, then asks Ollama for a summary
 - 🧠 the client receives a compact JSON response with `text` and `summary`
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    client["Client<br/>PCM audio chunks"] --> ws["WS Server<br/>Node.js + TypeScript<br/>:8080"]
+    client["Client<br/>PCM audio chunks"] --> ws["Audio Server<br/>Node.js + TypeScript<br/>:8080"]
+    upload["HTTP Client<br/>WAV file upload"] -- "POST /summarize" --> ws
     ws --> stt["STT Service<br/>FastAPI<br/>:9000"]
     stt --> fw["faster-whisper<br/>transcription"]
     fw -. transcript .-> ws
     ws --> ollama["Ollama<br/>LLM summary<br/>:11434"]
     ollama -. summary .-> ws
-    ws -. JSON { text, summary } .-> client
+    ws -. "JSON { text, summary }" .-> client
+    ws -. "JSON { text, summary }" .-> upload
 
     classDef entry fill:#FFF4DB,stroke:#D97706,color:#7C2D12,stroke-width:1.5px;
     classDef service fill:#E8F1FF,stroke:#2563EB,color:#0F172A,stroke-width:1.5px;
     classDef engine fill:#ECFDF3,stroke:#059669,color:#064E3B,stroke-width:1.5px;
     classDef ai fill:#F5F3FF,stroke:#7C3AED,color:#4C1D95,stroke-width:1.5px;
 
-    class client entry;
+    class client,upload entry;
     class ws,stt service;
     class fw engine;
     class ollama ai;
@@ -44,11 +47,36 @@ flowchart LR
 
 | Layer | Tech | Purpose |
 | --- | --- | --- |
-| Client | WebSocket client | Streams raw PCM chunks |
-| Transport | `ws` + Node.js | Receives audio and returns results |
+| Client | WebSocket client | Streams raw PCM chunks in real time |
+| Client | HTTP client | Uploads a pre-recorded WAV file for summarization |
+| Transport | `ws` + Node.js `http` | Shared port — WS streaming and REST on `:8080` |
 | STT API | FastAPI | Accepts uploaded WAV and returns transcription |
 | Speech Engine | `faster-whisper` | Converts speech to text |
 | LLM | Ollama (`llama3`) | Builds a short summary |
+
+## Code Structure
+
+```
+src/
+├── index.ts                    # Entry point — creates and starts AudioServer
+├── config.ts                   # All env vars and tuning constants
+├── audio/
+│   ├── signal.ts               # analyzePcmSignal — RMS / peak voice-activity gate
+│   └── wav.ts                  # pcmToWav — builds RIFF/WAV header around raw PCM
+├── services/
+│   ├── SttService.ts           # HTTP client → STT microservice (:9000)
+│   └── LlmService.ts           # HTTP client → Ollama (:11434)
+├── pipeline/
+│   └── AudioPipeline.ts        # Orchestrates signal → STT → LLM
+│                               #   processPcm()  — used by WebSocket path
+│                               #   processWav()  — used by HTTP upload path
+├── server/
+│   ├── WebSocketSession.ts     # Per-connection PCM buffer + flush logic
+│   └── AudioServer.ts          # HTTP + WS server on the same port
+└── utils/
+    ├── errors.ts               # extractErrorDetails — normalises thrown values
+    └── transcript.ts           # shouldIgnoreTranscript, hasEnoughContextForSummary
+```
 
 ## Quick Start
 
@@ -73,14 +101,14 @@ uvicorn main:app --host 0.0.0.0 --port 9000
 
 Runs on `http://localhost:9000`.
 
-### 3. Start the WebSocket Server 🌐
+### 3. Start the Audio Server 🌐
 
 ```bash
 npm install
 npm run dev
 ```
 
-Runs on `ws://localhost:8080`.
+Runs on `localhost:8080` — serves both WebSocket and HTTP on the same port.
 
 ## STT Service (Python)
 
@@ -138,7 +166,7 @@ curl -X POST http://localhost:9000/transcribe \
 
 If CUDA runtime cannot be loaded, the service falls back to CPU and the response will show `"device":"cpu"`.
 
-## WebSocket Server (Node.js)
+## Audio Server (Node.js)
 
 ### Requirements
 
@@ -160,21 +188,79 @@ npm run dev
 npm run build && npm start
 ```
 
-### Verify
+### WebSocket — real-time PCM streaming
+
+Connect to `ws://localhost:8080` and send raw 16-bit little-endian PCM chunks (16 kHz, mono).
+The server buffers incoming audio, flushes once enough data has accumulated (≥ 5 s), and sends back a JSON result.
 
 ```js
 const ws = new WebSocket("ws://localhost:8080");
 
 ws.onmessage = (event) => {
-  console.log(JSON.parse(event.data));
+  const { text, summary } = JSON.parse(event.data);
+  console.log("transcript:", text);
+  console.log("summary:   ", summary);
 };
 
-// send binary PCM audio chunks via ws.send(audioBuffer)
-// expected response: { text: "...", summary: "..." }
+// stream raw PCM chunks
+ws.send(pcmBuffer); // ArrayBuffer or Buffer, binary
 ```
+
+Expected response:
+```json
+{ "text": "We need to move the meeting to Thursday.", "summary": "The caller requested to reschedule the meeting to Thursday." }
+```
+
+### HTTP — upload a pre-recorded WAV file
+
+`POST /summarize` accepts the raw WAV binary as the request body and returns the same JSON structure.
+Suitable for batch processing of recordings of any length.
+
+**curl**
+```bash
+curl -X POST http://localhost:8080/summarize \
+  --data-binary @recording.wav \
+  -H "Content-Type: audio/wav"
+```
+
+**fetch (browser / Node.js)**
+```js
+const wavBytes = await fs.readFile("recording.wav");
+
+const response = await fetch("http://localhost:8080/summarize", {
+  method: "POST",
+  headers: { "Content-Type": "audio/wav" },
+  body: wavBytes,
+});
+
+const { text, summary } = await response.json();
+```
+
+**Python**
+```python
+import requests
+
+with open("recording.wav", "rb") as f:
+    r = requests.post(
+        "http://localhost:8080/summarize",
+        data=f,
+        headers={"Content-Type": "audio/wav"},
+    )
+
+print(r.json())
+# {"text": "...", "summary": "..."}
+```
+
+**Response codes**
+
+| Code | Meaning |
+| --- | --- |
+| `200` | Success — `{ text, summary }` returned |
+| `422` | Audio produced no usable transcript (silent or filtered) |
+| `500` | Internal pipeline failure |
 
 ## Startup Order
 
-1. `ollama serve`
-2. `uvicorn main:app --host 0.0.0.0 --port 9000`
-3. `npm run dev`
+1. `ollama serve` — LLM on `:11434`
+2. `uvicorn main:app --host 0.0.0.0 --port 9000` — STT service on `:9000`
+3. `npm run dev` — Audio Server on `:8080` (WS + HTTP)
