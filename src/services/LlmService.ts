@@ -1,14 +1,6 @@
 import axios from "axios";
 import { OLLAMA_URL, OLLAMA_MODEL } from "../config";
 
-const SUMMARY_SYSTEM_PROMPT = `You are a call summarization assistant.
-Your task is to write a concise summary of the provided call transcript in 1-3 sentences.
-Rules:
-- Focus on key topics, decisions, and action items
-- Do NOT copy or paraphrase sentences verbatim from the transcript
-- Write in third person, past tense
-- Output only the summary — no headings, no preamble, no bullet points`;
-
 // HTTP client for the local Ollama LLM instance.
 // Sends a transcript and returns a prose summary.
 export class LlmService {
@@ -18,13 +10,19 @@ export class LlmService {
   ) {}
 
   async summarize(text: string): Promise<string> {
+    const prompt =
+      `Write a summary of the following call transcript in 1 to 3 sentences. ` +
+      `Only output the summary itself — no headings, no bullet points, no extra commentary.\n\n` +
+      `Transcript: ${text}\n\n` +
+      `Summary:`;
+
     const response = await axios.post(this.url, {
       model: this.model,
-      system: SUMMARY_SYSTEM_PROMPT,
-      prompt: `Transcript:\n${text}`,
+      prompt,
       stream: false,
       options: {
-        temperature: 0.3,
+        temperature: 0.2,
+        num_predict: 120,
       },
     });
 
