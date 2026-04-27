@@ -6,8 +6,17 @@ export const WS_HOST = "0.0.0.0";
 
 // External service endpoints
 export const STT_URL = process.env.STT_URL || "http://localhost:9000/transcribe";
+
+// LLM provider selection: "ollama" (default) | "lmstudio"
+export const LLM_PROVIDER = process.env.LLM_PROVIDER || "ollama";
+
+// Ollama settings
 export const OLLAMA_URL = process.env.OLLAMA_URL || "http://localhost:11434/api/chat";
 export const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "llama3";
+
+// LM Studio settings (OpenAI-compatible API)
+export const LM_STUDIO_URL = process.env.LM_STUDIO_URL || "http://localhost:1234/v1";
+export const LM_STUDIO_MODEL = process.env.LM_STUDIO_MODEL || "local-model";
 
 // Language for the generated summary (e.g. "English", "Russian", "Spanish").
 // Defaults to English when not set.

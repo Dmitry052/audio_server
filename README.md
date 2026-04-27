@@ -64,8 +64,11 @@ src/
 │   ├── signal.ts               # analyzePcmSignal — RMS / peak voice-activity gate
 │   └── wav.ts                  # pcmToWav — builds RIFF/WAV header around raw PCM
 ├── services/
+│   ├── ILlmService.ts          # Common interface for all LLM backends
+│   ├── llmFactory.ts           # Selects backend based on LLM_PROVIDER env var
 │   ├── SttService.ts           # HTTP client → STT microservice (:9000)
-│   └── LlmService.ts           # HTTP client → Ollama (:11434)
+│   ├── LlmService.ts           # Ollama backend → /api/chat (:11434)
+│   └── LmStudioService.ts      # LM Studio backend → OpenAI-compatible API (:1234)
 ├── pipeline/
 │   └── AudioPipeline.ts        # Orchestrates signal → STT → LLM
 │                               #   processPcm()  — used by WebSocket path
@@ -266,17 +269,30 @@ All variables are optional — defaults are shown in the **Default** column.
 | Variable | Default | Description |
 | --- | --- | --- |
 | `STT_URL` | `http://localhost:9000/transcribe` | STT service endpoint |
+| `LLM_PROVIDER` | `ollama` | LLM backend: `ollama` or `lmstudio` |
 | `OLLAMA_URL` | `http://localhost:11434/api/chat` | Ollama chat API endpoint |
 | `OLLAMA_MODEL` | `llama3` | Ollama model name |
+| `LM_STUDIO_URL` | `http://localhost:1234/v1` | LM Studio base URL (OpenAI-compatible) |
+| `LM_STUDIO_MODEL` | `local-model` | Model identifier shown in LM Studio |
 | `SUMMARY_LANGUAGE` | `English` | Language for the generated summary (e.g. `Russian`, `Spanish`) |
 | `SUMMARY_MAX_SENTENCES` | `3` | Maximum number of sentences in the summary |
 | `DEBUG_SAVE_WAV` | _(off)_ | Set to `1` to save each processed WAV to disk |
 | `DEBUG_WAV_PATH` | `/tmp/audio_server_debug.wav` | Path used when `DEBUG_SAVE_WAV=1` |
 
-**Example:**
+**Ollama:**
 ```bash
-STT_URL=http://stt-host:9000/transcribe \
+LLM_PROVIDER=ollama \
 OLLAMA_MODEL=mistral \
+SUMMARY_LANGUAGE=Russian \
+SUMMARY_MAX_SENTENCES=2 \
+npm run dev
+```
+
+**LM Studio:**
+```bash
+LLM_PROVIDER=lmstudio \
+LM_STUDIO_URL=http://localhost:1234/v1 \
+LM_STUDIO_MODEL=mistral-7b-instruct \
 SUMMARY_LANGUAGE=Russian \
 SUMMARY_MAX_SENTENCES=2 \
 npm run dev

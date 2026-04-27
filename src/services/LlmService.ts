@@ -1,9 +1,9 @@
 import axios from "axios";
 import { OLLAMA_URL, OLLAMA_MODEL, SUMMARY_LANGUAGE, SUMMARY_MAX_SENTENCES } from "../config";
+import type { ILlmService } from "./ILlmService";
 
-// HTTP client for the local Ollama LLM instance.
-// Sends a transcript and returns a prose summary.
-export class LlmService {
+// Ollama backend — uses the /api/chat endpoint (OpenAI-style messages format).
+export class LlmService implements ILlmService {
   constructor(
     private readonly url: string = OLLAMA_URL,
     private readonly model: string = OLLAMA_MODEL,

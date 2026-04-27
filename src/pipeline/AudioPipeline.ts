@@ -1,6 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import { SttService } from "../services/SttService";
-import { LlmService } from "../services/LlmService";
+import { createLlmService } from "../services/llmFactory";
+import type { ILlmService } from "../services/ILlmService";
 import { analyzePcmSignal } from "../audio/signal";
 import { pcmToWav } from "../audio/wav";
 import { shouldIgnoreTranscript, hasEnoughContextForSummary } from "../utils/transcript";
@@ -25,7 +26,7 @@ export interface PipelineResult {
 export class AudioPipeline {
   constructor(
     private readonly stt: SttService = new SttService(),
-    private readonly llm: LlmService = new LlmService(),
+    private readonly llm: ILlmService = createLlmService(),
   ) {}
 
   // Entry point for WebSocket streaming: receives raw PCM, applies RMS gate, then delegates to processWav.
@@ -74,7 +75,7 @@ export class AudioPipeline {
       try {
         summary = await this.llm.summarize(text);
       } catch (error) {
-        console.error("ollama error:", extractErrorDetails(error));
+        console.error("llm error:", extractErrorDetails(error));
       }
     } else {
       console.log(`⏭️ Skipping summary for short transcript: ${text}`);
