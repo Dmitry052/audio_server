@@ -266,7 +266,7 @@ All variables are optional — defaults are shown in the **Default** column.
 | Variable | Default | Description |
 | --- | --- | --- |
 | `STT_URL` | `http://localhost:9000/transcribe` | STT service endpoint |
-| `OLLAMA_URL` | `http://localhost:11434/api/generate` | Ollama API endpoint |
+| `OLLAMA_URL` | `http://localhost:11434/api/chat` | Ollama chat API endpoint |
 | `OLLAMA_MODEL` | `llama3` | Ollama model name |
 | `SUMMARY_LANGUAGE` | `English` | Language for the generated summary (e.g. `Russian`, `Spanish`) |
 | `SUMMARY_MAX_SENTENCES` | `3` | Maximum number of sentences in the summary |

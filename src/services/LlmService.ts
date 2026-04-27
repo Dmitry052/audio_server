@@ -10,22 +10,29 @@ export class LlmService {
   ) {}
 
   async summarize(text: string): Promise<string> {
-    const prompt =
-      `Write a summary of the following call transcript in 1 to ${SUMMARY_MAX_SENTENCES} sentences in ${SUMMARY_LANGUAGE}. ` +
-      `Only output the summary itself — no headings, no bullet points, no extra commentary.\n\n` +
-      `Transcript: ${text}\n\n` +
-      `Summary:`;
-
     const response = await axios.post(this.url, {
       model: this.model,
-      prompt,
+      messages: [
+        {
+          role: "system",
+          content:
+            `You are a call summarization assistant. ` +
+            `Always respond in ${SUMMARY_LANGUAGE}. ` +
+            `Write exactly 1 to ${SUMMARY_MAX_SENTENCES} sentences. ` +
+            `Output only the summary — no headings, no bullet points, no preamble.`,
+        },
+        {
+          role: "user",
+          content: `Summarize this call transcript:\n\n${text}`,
+        },
+      ],
       stream: false,
       options: {
         temperature: 0.2,
-        num_predict: 120,
+        num_predict: 200,
       },
     });
 
-    return String(response.data?.response || "").trim();
+    return String(response.data?.message?.content || "").trim();
   }
 }

@@ -6,7 +6,7 @@ export const WS_HOST = "0.0.0.0";
 
 // External service endpoints
 export const STT_URL = process.env.STT_URL || "http://localhost:9000/transcribe";
-export const OLLAMA_URL = process.env.OLLAMA_URL || "http://localhost:11434/api/generate";
+export const OLLAMA_URL = process.env.OLLAMA_URL || "http://localhost:11434/api/chat";
 export const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "llama3";
 
 // Language for the generated summary (e.g. "English", "Russian", "Spanish").
