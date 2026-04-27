@@ -259,6 +259,29 @@ print(r.json())
 | `422` | Audio produced no usable transcript (silent or filtered) |
 | `500` | Internal pipeline failure |
 
+## Environment Variables
+
+All variables are optional — defaults are shown in the **Default** column.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `STT_URL` | `http://localhost:9000/transcribe` | STT service endpoint |
+| `OLLAMA_URL` | `http://localhost:11434/api/generate` | Ollama API endpoint |
+| `OLLAMA_MODEL` | `llama3` | Ollama model name |
+| `SUMMARY_LANGUAGE` | `English` | Language for the generated summary (e.g. `Russian`, `Spanish`) |
+| `SUMMARY_MAX_SENTENCES` | `3` | Maximum number of sentences in the summary |
+| `DEBUG_SAVE_WAV` | _(off)_ | Set to `1` to save each processed WAV to disk |
+| `DEBUG_WAV_PATH` | `/tmp/audio_server_debug.wav` | Path used when `DEBUG_SAVE_WAV=1` |
+
+**Example:**
+```bash
+STT_URL=http://stt-host:9000/transcribe \
+OLLAMA_MODEL=mistral \
+SUMMARY_LANGUAGE=Russian \
+SUMMARY_MAX_SENTENCES=2 \
+npm run dev
+```
+
 ## Startup Order
 
 1. `ollama serve` — LLM on `:11434`

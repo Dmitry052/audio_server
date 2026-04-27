@@ -9,6 +9,13 @@ export const STT_URL = process.env.STT_URL || "http://localhost:9000/transcribe"
 export const OLLAMA_URL = process.env.OLLAMA_URL || "http://localhost:11434/api/generate";
 export const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "llama3";
 
+// Language for the generated summary (e.g. "English", "Russian", "Spanish").
+// Defaults to English when not set.
+export const SUMMARY_LANGUAGE = process.env.SUMMARY_LANGUAGE || "English";
+
+// Maximum number of sentences in the generated summary.
+export const SUMMARY_MAX_SENTENCES = Number(process.env.SUMMARY_MAX_SENTENCES) || 3;
+
 // PCM audio format — must match what the client streams
 export const SAMPLE_RATE = 16000;
 export const CHANNELS = 1;
