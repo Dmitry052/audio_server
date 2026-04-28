@@ -64,7 +64,7 @@ python3 -c 'import ctypes; ctypes.CDLL("libcublas.so.12"); print("libcublas.so.1
 ## Run
 
 ```bash
-source whisper-env/bin/activate
+source whisper-env/bin/activate  # skip if already active
 uvicorn main:app --host 0.0.0.0 --port 9000
 ```
 

@@ -109,7 +109,9 @@ AppModule
 
 ## Quick Start
 
-### 1. Start Ollama
+### With Ollama
+
+**1. Start Ollama**
 
 ```bash
 ollama pull llama3
@@ -118,19 +120,18 @@ ollama serve
 
 Runs on `http://localhost:11434`.
 
-### 2. Start the STT Service
+**2. Start the STT service**
 
 ```bash
 cd stt-service
-python3 -m venv whisper-env
+bash setup.sh
 source whisper-env/bin/activate
-pip install faster-whisper fastapi uvicorn python-multipart
 uvicorn main:app --host 0.0.0.0 --port 9000
 ```
 
 Runs on `http://localhost:9000`.
 
-### 3. Start the Audio Server
+**3. Start the Audio Server**
 
 ```bash
 npm install
@@ -138,6 +139,36 @@ npm run dev
 ```
 
 Runs on `localhost:8080` — serves both WebSocket and HTTP on the same port.
+
+---
+
+### With LM Studio
+
+**1. Open LM Studio, load a model, and start the local server**
+
+In the LM Studio UI: *Local Server → Start Server* (default port: `1234`).
+Note the exact model identifier shown in the UI — you will need it for `LM_STUDIO_MODEL`.
+
+**2. Start the STT service** (same as above)
+
+```bash
+cd stt-service
+bash setup.sh
+source whisper-env/bin/activate
+uvicorn main:app --host 0.0.0.0 --port 9000
+```
+
+**3. Start the Audio Server**
+
+```bash
+npm install
+LLM_PROVIDER=lmstudio \
+LM_STUDIO_URL=http://localhost:1234/v1 \
+LM_STUDIO_MODEL=mistral-7b-instruct \
+npm run dev
+```
+
+`LM_STUDIO_MODEL` must match the identifier shown in LM Studio (e.g. `mistral-7b-instruct`, `llama-3-8b-instruct`, etc.).
 
 ## STT Service (Python)
 
