@@ -1,9 +1,10 @@
 # Audio Server
 
-> 🎙️ Real-time speech pipeline: client audio → WebSocket streaming or HTTP file upload → speech-to-text → LLM summary.
+> Real-time speech pipeline: client audio → WebSocket streaming or HTTP file upload → speech-to-text → LLM summary.
 
+![NestJS](https://img.shields.io/badge/NestJS-10-E0234E?style=flat-square&logo=nestjs&logoColor=white)
 ![Node.js](https://img.shields.io/badge/Node.js-18%2B-2F7D32?style=flat-square&logo=nodedotjs&logoColor=white)
-![TypeScript](https://img.shields.io/badge/TypeScript-WS%20Server-3178C6?style=flat-square&logo=typescript&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?style=flat-square&logo=typescript&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-STT%20Service-009688?style=flat-square&logo=fastapi&logoColor=white)
 ![faster-whisper](https://img.shields.io/badge/faster--whisper-STT-7A3FF2?style=flat-square)
 ![Ollama](https://img.shields.io/badge/Ollama-LLM%20Summary-111111?style=flat-square)
@@ -12,25 +13,23 @@
 
 ## Highlights
 
-This repository combines two small services into one voice-processing pipeline:
-
-- 🎧 `stt-service/` handles speech-to-text through `faster-whisper`
-- 🌐 `src/` accepts PCM audio over WebSocket **or** a full WAV file over HTTP, buffers/encodes it, sends to STT, then asks Ollama for a summary
-- 🧠 the client receives a compact JSON response with `text` and `summary`
+- `stt-service/` — Python FastAPI service that handles speech-to-text via `faster-whisper`
+- `src/` — NestJS server that accepts PCM audio over WebSocket **or** a WAV file over HTTP, sends it through STT, then generates an LLM summary
+- The client receives `{ text, summary }` JSON after each pipeline run
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    client["Client<br/>PCM audio chunks"] --> ws["Audio Server<br/>Node.js + TypeScript<br/>:8080"]
-    upload["HTTP Client<br/>WAV file upload"] -- "POST /summarize" --> ws
-    ws --> stt["STT Service<br/>FastAPI<br/>:9000"]
-    stt --> fw["faster-whisper<br/>transcription"]
+    client["Client\nPCM audio chunks"] --> ws["Audio Server\nNestJS\n:8080"]
+    upload["HTTP Client\nWAV file upload"] -- "POST /summarize" --> ws
+    ws --> stt["STT Service\nFastAPI\n:9000"]
+    stt --> fw["faster-whisper\ntranscription"]
     fw -. transcript .-> ws
-    ws --> ollama["Ollama<br/>LLM summary<br/>:11434"]
+    ws --> ollama["Ollama\nLLM summary\n:11434"]
     ollama -. summary .-> ws
-    ws -. "JSON { text, summary }" .-> client
-    ws -. "JSON { text, summary }" .-> upload
+    ws -. "{ text, summary }" .-> client
+    ws -. "{ text, summary }" .-> upload
 
     classDef entry fill:#FFF4DB,stroke:#D97706,color:#7C2D12,stroke-width:1.5px;
     classDef service fill:#E8F1FF,stroke:#2563EB,color:#0F172A,stroke-width:1.5px;
@@ -43,47 +42,74 @@ flowchart LR
     class ollama ai;
 ```
 
-## Stack At a Glance
-
-| Layer | Tech | Purpose |
-| --- | --- | --- |
-| Client | WebSocket client | Streams raw PCM chunks in real time |
-| Client | HTTP client | Uploads a pre-recorded WAV file for summarization |
-| Transport | `ws` + Node.js `http` | Shared port — WS streaming and REST on `:8080` |
-| STT API | FastAPI | Accepts uploaded WAV and returns transcription |
-| Speech Engine | `faster-whisper` | Converts speech to text |
-| LLM | Ollama (`llama3`) | Builds a short summary |
-
-## Code Structure
+## NestJS Module Structure
 
 ```
 src/
-├── index.ts                    # Entry point — creates and starts AudioServer
-├── config.ts                   # All env vars and tuning constants
-├── audio/
-│   ├── signal.ts               # analyzePcmSignal — RMS / peak voice-activity gate
-│   └── wav.ts                  # pcmToWav — builds RIFF/WAV header around raw PCM
-├── services/
-│   ├── ILlmService.ts          # Common interface for all LLM backends
-│   ├── llmFactory.ts           # Selects backend based on LLM_PROVIDER env var
-│   ├── SttService.ts           # HTTP client → STT microservice (:9000)
-│   ├── LlmService.ts           # Ollama backend → /api/chat (:11434)
-│   └── LmStudioService.ts      # LM Studio backend → OpenAI-compatible API (:1234)
-├── pipeline/
-│   └── AudioPipeline.ts        # Orchestrates signal → STT → LLM
-│                               #   processPcm()  — used by WebSocket path
-│                               #   processWav()  — used by HTTP upload path
-├── server/
-│   ├── WebSocketSession.ts     # Per-connection PCM buffer + flush logic
-│   └── AudioServer.ts          # HTTP + WS server on the same port
-└── utils/
-    ├── errors.ts               # extractErrorDetails — normalises thrown values
-    └── transcript.ts           # shouldIgnoreTranscript, hasEnoughContextForSummary
+├── main.ts                                # Bootstrap: NestFactory, WsAdapter, body parsers
+├── app.module.ts                          # Root module — wires ConfigModule + feature modules
+│
+├── config/
+│   └── configuration.ts                  # Config factory loaded by @nestjs/config
+│
+├── audio/                                 # AudioModule — transport layer
+│   ├── audio.module.ts
+│   ├── audio.controller.ts               # POST /summarize (HTTP WAV upload)
+│   ├── audio.gateway.ts                  # WebSocket gateway (binary PCM streaming)
+│   ├── audio-pipeline.service.ts         # Orchestrates signal → WAV → STT → LLM
+│   └── interfaces/
+│       └── pipeline-result.interface.ts  # { text, summary }
+│
+├── stt/                                   # SttModule
+│   ├── stt.module.ts
+│   └── stt.service.ts                    # HTTP client → STT microservice (:9000)
+│
+├── llm/                                   # LlmModule
+│   ├── llm.module.ts                     # Factory provider: selects Ollama or LM Studio
+│   ├── llm.tokens.ts                     # LLM_SERVICE injection token
+│   ├── ollama-llm.service.ts             # Ollama backend → /api/chat
+│   ├── lm-studio-llm.service.ts          # LM Studio backend → OpenAI-compatible API
+│   └── interfaces/
+│       └── llm.interface.ts              # ILlmService: summarize(text): Promise<string>
+│
+└── common/
+    └── utils/
+        ├── signal.util.ts                # analyzePcmSignal — RMS/peak voice-activity gate
+        ├── wav.util.ts                   # pcmToWav — RIFF/WAV header builder
+        ├── errors.util.ts                # extractErrorDetails — normalises thrown values
+        └── transcript.util.ts            # shouldIgnoreTranscript, hasEnoughContextForSummary
 ```
+
+### Module dependency graph
+
+```
+AppModule
+ ├── ConfigModule (global)
+ ├── SttModule  ──────────────────────────────┐
+ ├── LlmModule  ──────────────────────────────┤
+ └── AudioModule                              │
+      ├── imports SttModule ◄─────────────────┘
+      ├── imports LlmModule ◄─────────────────┘
+      ├── AudioController   (POST /summarize)
+      ├── AudioGateway      (WebSocket PCM)
+      └── AudioPipelineService
+```
+
+## Stack
+
+| Layer | Technology | Purpose |
+|---|---|---|
+| Framework | NestJS 10 + Express | DI, modules, HTTP routing |
+| Transport | `@nestjs/platform-ws` + `ws` | WebSocket on the same HTTP port |
+| Config | `@nestjs/config` | Typed env-var loading |
+| STT client | axios | Multipart WAV upload to FastAPI |
+| LLM — Ollama | axios | `/api/chat` endpoint |
+| LLM — LM Studio | `openai` SDK | OpenAI-compatible `/v1` endpoint |
+| STT engine | FastAPI + `faster-whisper` | Speech-to-text microservice |
 
 ## Quick Start
 
-### 1. Start Ollama 🧠
+### 1. Start Ollama
 
 ```bash
 ollama pull llama3
@@ -92,7 +118,7 @@ ollama serve
 
 Runs on `http://localhost:11434`.
 
-### 2. Start the STT Service 🎙️
+### 2. Start the STT Service
 
 ```bash
 cd stt-service
@@ -104,7 +130,7 @@ uvicorn main:app --host 0.0.0.0 --port 9000
 
 Runs on `http://localhost:9000`.
 
-### 3. Start the Audio Server 🌐
+### 3. Start the Audio Server
 
 ```bash
 npm install
@@ -119,7 +145,7 @@ Runs on `localhost:8080` — serves both WebSocket and HTTP on the same port.
 
 - Python 3.10+
 - NVIDIA GPU for CUDA acceleration, or CPU fallback
-- if using GPU: CUDA 12 runtime with `libcublas.so.12` available to the process
+- If using GPU: CUDA 12 runtime with `libcublas.so.12` available to the process
 
 ### Install CUDA / cuBLAS (`libcublas.so.12`)
 
@@ -143,7 +169,6 @@ sudo apt-get install -y libcublas-12-8 libcublas-dev-12-8
 nvidia-smi
 ldconfig -p | grep libcublas.so.12
 find /usr -name 'libcublas.so*' 2>/dev/null
-find /usr/local -name 'libcublas.so*' 2>/dev/null
 python3 -c "import ctypes; ctypes.CDLL('libcublas.so.12'); print('libcublas.so.12: OK')"
 ```
 
@@ -167,9 +192,9 @@ curl -X POST http://localhost:9000/transcribe \
 # {"language":"en","text":"...","device":"cuda","compute_type":"float16"}
 ```
 
-If CUDA runtime cannot be loaded, the service falls back to CPU and the response will show `"device":"cpu"`.
+If CUDA runtime cannot be loaded the service falls back to CPU and the response will show `"device":"cpu"`.
 
-## Audio Server (Node.js)
+## Audio Server (Node.js / NestJS)
 
 ### Requirements
 
@@ -186,9 +211,8 @@ npm install
 ### Run
 
 ```bash
-npm run dev
-# or
-npm run build && npm start
+npm run dev           # hot-reload via tsx watch
+npm run build && npm start   # compile to dist/ then run
 ```
 
 ### WebSocket — real-time PCM streaming
@@ -217,7 +241,6 @@ Expected response:
 ### HTTP — upload a pre-recorded WAV file
 
 `POST /summarize` accepts the raw WAV binary as the request body and returns the same JSON structure.
-Suitable for batch processing of recordings of any length.
 
 **curl**
 ```bash
@@ -257,7 +280,7 @@ print(r.json())
 **Response codes**
 
 | Code | Meaning |
-| --- | --- |
+|---|---|
 | `200` | Success — `{ text, summary }` returned |
 | `422` | Audio produced no usable transcript (silent or filtered) |
 | `500` | Internal pipeline failure |
@@ -267,7 +290,9 @@ print(r.json())
 All variables are optional — defaults are shown in the **Default** column.
 
 | Variable | Default | Description |
-| --- | --- | --- |
+|---|---|---|
+| `WS_PORT` | `8080` | Port for both HTTP and WebSocket |
+| `WS_HOST` | `0.0.0.0` | Bind address |
 | `STT_URL` | `http://localhost:9000/transcribe` | STT service endpoint |
 | `LLM_PROVIDER` | `ollama` | LLM backend: `ollama` or `lmstudio` |
 | `OLLAMA_URL` | `http://localhost:11434/api/chat` | Ollama chat API endpoint |
@@ -275,11 +300,13 @@ All variables are optional — defaults are shown in the **Default** column.
 | `LM_STUDIO_URL` | `http://localhost:1234/v1` | LM Studio base URL (OpenAI-compatible) |
 | `LM_STUDIO_MODEL` | `local-model` | Model identifier shown in LM Studio |
 | `SUMMARY_LANGUAGE` | `English` | Language for the generated summary (e.g. `Russian`, `Spanish`) |
-| `SUMMARY_MAX_SENTENCES` | `3` | Maximum number of sentences in the summary |
+| `SUMMARY_MAX_SENTENCES` | `3` | Maximum sentences in the summary |
+| `MIN_AUDIO_SECONDS` | `5` | Minimum buffered seconds before a WebSocket flush is triggered |
+| `MIN_RMS` | `0.003` | RMS amplitude gate — audio below this is skipped |
 | `DEBUG_SAVE_WAV` | _(off)_ | Set to `1` to save each processed WAV to disk |
 | `DEBUG_WAV_PATH` | `/tmp/audio_server_debug.wav` | Path used when `DEBUG_SAVE_WAV=1` |
 
-**Ollama:**
+**Ollama example:**
 ```bash
 LLM_PROVIDER=ollama \
 OLLAMA_MODEL=mistral \
@@ -288,7 +315,7 @@ SUMMARY_MAX_SENTENCES=2 \
 npm run dev
 ```
 
-**LM Studio:**
+**LM Studio example:**
 ```bash
 LLM_PROVIDER=lmstudio \
 LM_STUDIO_URL=http://localhost:1234/v1 \

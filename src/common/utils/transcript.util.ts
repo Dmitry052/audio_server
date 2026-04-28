@@ -1,9 +1,16 @@
-import { IGNORED_TRANSCRIPTS, MIN_SUMMARY_WORDS } from "../config";
+const IGNORED_TRANSCRIPTS = new Set([
+  'you',
+  'thank you',
+  'thanks',
+  'bye',
+  'bye-bye',
+  'goodbye',
+]);
 
-// Returns true if the transcript is too trivial to process further
-// (empty, a known filler word, or a single very short token).
+const MIN_SUMMARY_WORDS = 3;
+
 export function shouldIgnoreTranscript(text: string): boolean {
-  const normalized = text.toLowerCase().replace(/[.!?,;:]+$/g, "").trim();
+  const normalized = text.toLowerCase().replace(/[.!?,;:]+$/g, '').trim();
 
   if (!normalized) return true;
   if (IGNORED_TRANSCRIPTS.has(normalized)) return true;
@@ -11,7 +18,6 @@ export function shouldIgnoreTranscript(text: string): boolean {
   return normalized.split(/\s+/).length === 1 && normalized.length <= 4;
 }
 
-// Returns true when the transcript has enough words to justify an LLM summary pass.
 export function hasEnoughContextForSummary(text: string): boolean {
   return text.split(/\s+/).filter(Boolean).length >= MIN_SUMMARY_WORDS;
 }

@@ -62,6 +62,76 @@ source whisper-env/bin/activate
 uvicorn main:app --host 0.0.0.0 --port 9000
 ```
 
+## How to extend
+
+### Add a config option
+
+Add a field to `Settings` in [app/config.py](app/config.py) — it is automatically read from the environment (or `.env`):
+
+```python
+class Settings(BaseSettings):
+    whisper_model: str = "small"
+    whisper_beam_size: int = 5        # ← new option
+```
+
+Then use it inside `WhisperService._run_transcribe`:
+
+```python
+def _run_transcribe(self, audio_path: str):
+    return self._model.transcribe(
+        audio_path,
+        beam_size=self.settings.whisper_beam_size,   # ← pass it here
+        ...
+    )
+```
+
+### Add a new STT backend
+
+1. Create `app/services/my_backend.py` that returns `TranscribeResult`:
+
+```python
+from app.services.whisper import TranscribeResult
+
+class MyBackendService:
+    def load(self) -> None: ...
+
+    def transcribe(self, audio_path: str) -> TranscribeResult:
+        ...
+        return TranscribeResult(language="en", text="...", device="cpu", compute_type="int8")
+```
+
+2. Swap it in [app/lifespan.py](app/lifespan.py):
+
+```python
+from app.services.my_backend import MyBackendService
+
+service = MyBackendService()
+service.load()
+app.state.whisper = service
+```
+
+No other files need to change.
+
+### Add a new endpoint
+
+Create a router file under `app/routers/` and register it in [main.py](main.py):
+
+```python
+# app/routers/languages.py
+from fastapi import APIRouter
+router = APIRouter(tags=["languages"])
+
+@router.get("/languages")
+def supported_languages() -> list[str]:
+    return ["en", "de", "fr"]
+```
+
+```python
+# main.py
+from app.routers.languages import router as languages_router
+app.include_router(languages_router)
+```
+
 ## Verify
 
 ```bash

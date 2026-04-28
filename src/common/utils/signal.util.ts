@@ -1,5 +1,3 @@
-// Computes RMS amplitude and peak level from a raw 16-bit little-endian PCM buffer.
-// Used as a voice-activity gate before sending audio to the STT service.
 export function analyzePcmSignal(pcmBuffer: Buffer): { rms: number; peak: number } {
   let sumSquares = 0;
   let peak = 0;

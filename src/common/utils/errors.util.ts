@@ -1,6 +1,5 @@
-import axios from "axios";
+import axios from 'axios';
 
-// Normalizes any thrown value into a plain serializable object for structured logging.
 export function extractErrorDetails(error: unknown) {
   if (axios.isAxiosError(error)) {
     return {
