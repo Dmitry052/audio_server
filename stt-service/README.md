@@ -3,10 +3,16 @@
 ## Setup
 
 ```bash
-python3 -m venv whisper-env
+bash setup.sh
 source whisper-env/bin/activate
-pip install faster-whisper fastapi uvicorn python-multipart
 ```
+
+Dependencies (`requirements.txt`):
+- `faster-whisper` — Whisper inference
+- `fastapi` — HTTP framework
+- `uvicorn[standard]` — ASGI server
+- `python-multipart` — file upload support
+- `pydantic-settings` — config from environment variables
 
 ## Install CUDA / cuBLAS (`libcublas.so.12`)
 
