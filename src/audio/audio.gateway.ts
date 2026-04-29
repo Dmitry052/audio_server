@@ -6,13 +6,15 @@ import {
   OnGatewayDisconnect,
 } from '@nestjs/websockets';
 import WebSocket from 'ws';
-import { AudioPipelineService } from './audio-pipeline.service';
+import { QueueService } from '../queue/queue.service';
+import { AudioClientsService } from './audio-clients.service';
 import { extractErrorDetails } from '../common/utils/errors.util';
 
 interface WsSession {
+  clientId: string;
   pcmChunks: Buffer[];
   pcmBytes: number;
-  isProcessing: boolean;
+  draining: boolean;
 }
 
 @Injectable()
@@ -22,7 +24,8 @@ export class AudioGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly minPcmBytes: number;
 
   constructor(
-    private readonly pipeline: AudioPipelineService,
+    private readonly queue: QueueService,
+    private readonly clients: AudioClientsService,
     config: ConfigService,
   ) {
     const sampleRate = config.get<number>('audio.sampleRate')!;
@@ -34,7 +37,12 @@ export class AudioGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   handleConnection(client: WebSocket): void {
     console.log('Client connected');
-    const session: WsSession = { pcmChunks: [], pcmBytes: 0, isProcessing: false };
+    const session: WsSession = {
+      clientId: crypto.randomUUID(),
+      pcmChunks: [],
+      pcmBytes: 0,
+      draining: false,
+    };
     this.sessions.set(client, session);
 
     client.on('message', (data: WebSocket.RawData, isBinary: boolean) => {
@@ -49,8 +57,11 @@ export class AudioGateway implements OnGatewayConnection, OnGatewayDisconnect {
   handleDisconnect(client: WebSocket): void {
     console.log('Client disconnected');
     const session = this.sessions.get(client);
-    if (session && session.pcmBytes > 0) {
-      void this.flushBufferedAudio(client, session, 'close');
+    if (session) {
+      this.clients.unregister(session.clientId);
+      if (session.pcmBytes > 0) {
+        void this.flushBufferedAudio(client, session, 'close');
+      }
     }
   }
 
@@ -86,34 +97,35 @@ export class AudioGateway implements OnGatewayConnection, OnGatewayDisconnect {
     session: WsSession,
     reason: string,
   ): Promise<void> {
-    if (session.isProcessing || session.pcmBytes === 0) return;
+    if (session.draining || session.pcmBytes === 0) return;
 
-    session.isProcessing = true;
-
+    // Hold the lock only while draining the buffer — queuing is instant
+    session.draining = true;
     const pcmBuffer = Buffer.concat(session.pcmChunks, session.pcmBytes);
     session.pcmChunks = [];
     session.pcmBytes = 0;
+    session.draining = false;
+
+    // Register client so the worker can push the result back
+    this.clients.register(session.clientId, client);
 
     try {
-      const result = await this.pipeline.processPcm(pcmBuffer, reason);
-
-      if (result && client.readyState === WebSocket.OPEN) {
-        const payload = JSON.stringify(result);
-        client.send(payload);
-        console.log(`Sent result to client: ${payload}`);
-      }
-    } catch (error) {
-      console.error('pipeline error:', extractErrorDetails(error));
+      const jobId = await this.queue.enqueue({
+        type: 'pcm',
+        buffer: pcmBuffer.toString('base64'),
+        clientId: session.clientId,
+        reason,
+      });
 
       if (client.readyState === WebSocket.OPEN) {
-        client.send(JSON.stringify({ error: 'audio pipeline failed' }));
+        client.send(JSON.stringify({ jobId, status: 'queued' }));
       }
-    } finally {
-      session.isProcessing = false;
 
-      // Flush again if more audio arrived while processing.
-      if (session.pcmBytes >= this.minPcmBytes) {
-        void this.flushBufferedAudio(client, session, 'backlog');
+      console.log(`Queued PCM job ${jobId} (reason=${reason}, bytes=${pcmBuffer.length})`);
+    } catch (error) {
+      console.error('enqueue error:', extractErrorDetails(error));
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(JSON.stringify({ error: 'failed to queue job' }));
       }
     }
   }

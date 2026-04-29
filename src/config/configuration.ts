@@ -32,4 +32,8 @@ export default () => ({
     saveWav: process.env.DEBUG_SAVE_WAV === '1',
     wavPath: process.env.DEBUG_WAV_PATH ?? '/tmp/audio_server_debug.wav',
   },
+  queue: {
+    databaseUrl: process.env.QUEUE_DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/audio_server',
+    concurrency: parseInt(process.env.QUEUE_CONCURRENCY ?? '2', 10),
+  },
 });

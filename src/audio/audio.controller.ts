@@ -1,29 +1,46 @@
-import { Controller, Post, Req, Res, HttpStatus } from '@nestjs/common';
-import { Request, Response } from 'express';
-import { AudioPipelineService } from './audio-pipeline.service';
+import {
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  NotFoundException,
+  Param,
+  Post,
+  Req,
+} from '@nestjs/common';
+import { Request } from 'express';
+import { QueueService } from '../queue/queue.service';
 import { extractErrorDetails } from '../common/utils/errors.util';
 
 @Controller()
 export class AudioController {
-  constructor(private readonly pipeline: AudioPipelineService) {}
+  constructor(private readonly queue: QueueService) {}
 
   @Post('summarize')
-  async summarize(@Req() req: Request, @Res() res: Response): Promise<void> {
+  @HttpCode(HttpStatus.ACCEPTED)
+  async submitSummarize(@Req() req: Request): Promise<{ jobId: string; status: string }> {
+    const wavBuffer = req.body as Buffer;
+    console.log(`Received WAV for summarization: ${wavBuffer.length} bytes`);
+
+    const jobId = await this.queue.enqueue({
+      type: 'wav',
+      buffer: wavBuffer.toString('base64'),
+    });
+
+    console.log(`Queued WAV job: ${jobId}`);
+    return { jobId, status: 'queued' };
+  }
+
+  @Get('summarize/:jobId')
+  async getJobStatus(@Param('jobId') jobId: string) {
     try {
-      const wavBuffer = req.body as Buffer;
-      console.log(`Received WAV for summarization: ${wavBuffer.length} bytes`);
-
-      const result = await this.pipeline.processWav(wavBuffer);
-
-      if (!result) {
-        res.status(HttpStatus.UNPROCESSABLE_ENTITY).json({ error: 'Audio produced no usable transcript' });
-        return;
-      }
-
-      res.status(HttpStatus.OK).json(result);
+      const status = await this.queue.getJobStatus(jobId);
+      if (!status) throw new NotFoundException(`Job ${jobId} not found`);
+      return status;
     } catch (error) {
-      console.error('summarize error:', extractErrorDetails(error));
-      res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ error: 'Summarization failed' });
+      if (error instanceof NotFoundException) throw error;
+      console.error('getJobStatus error:', extractErrorDetails(error));
+      throw error;
     }
   }
 }
